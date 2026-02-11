@@ -358,6 +358,7 @@ class QuantizedCNNModel:
                           If None, auto-computed from weight statistics
         """
         self.cnn_model = cnn_model
+        self.device = cnn_model.device  # Store device for later use
         self.weights_biases = cnn_model.get_weights_and_biases()
         self.num_layers = len(self.weights_biases)
         
@@ -404,6 +405,7 @@ class QuantizedCNNModel:
     def forward_quantized(self, x):
         """
         Forward pass with quantized weights.
+        Simulates fixed-point integer arithmetic.
         
         Args:
             x: Input tensor (float32, will be quantized internally)
@@ -411,34 +413,37 @@ class QuantizedCNNModel:
         Returns:
             Output logits (float32)
         """
-        # Quantize input
-        x_q = torch.round(x * self.scaling_factor).int().float()
-        
-        # Forward pass through CNN layers
-        x = x_q
+        # Forward pass through CNN layers, properly handling quantization
+        x = x  # Keep input in float for now
         layer_idx = 0
         
         for name, module in self.cnn_model.named_modules():
             if isinstance(module, nn.Conv2d):
-                # Get quantized weights
-                W_q = self.quantized_weights_biases[layer_idx]['weight']
+                # Get quantized weights and bias
+                W_q = self.quantized_weights_biases[layer_idx]['weight'].to(self.device)
                 b_q = self.quantized_weights_biases[layer_idx]['bias']
+                if b_q is not None:
+                    b_q = b_q.to(self.device)
                 
-                # Reshape weights for conv2d operation
+                # Reshape weights back to conv shape
                 W_q_reshaped = W_q.reshape(module.weight.shape).float()
-                b_q_float = b_q.float() / self.scaling_factor if b_q is not None else None
                 
-                # Conv2d operation with quantized weights
+                # Perform convolution with quantized weights
+                # W_q = W * S, so we need to divide output by S^2 (since both input and weight scale by S)
+                # But we keep input in float and just use scaled weights
+                b_q_rescaled = b_q.float() / (self.scaling_factor ** 2) if b_q is not None else None
+                
                 x = torch.nn.functional.conv2d(
-                    x / self.scaling_factor,
-                    W_q_reshaped / self.scaling_factor,
-                    bias=b_q_float,
+                    x,
+                    W_q_reshaped / (self.scaling_factor ** 2),  # Proper rescaling for quantized weights
+                    bias=b_q_rescaled,
                     stride=module.stride,
                     padding=module.padding
                 )
                 layer_idx += 1
                 
             elif isinstance(module, nn.BatchNorm2d):
+                # Apply batch norm (should ideally be fused into weights in real quantized network)
                 x = module(x)
             elif isinstance(module, nn.ReLU) or name.endswith('relu'):
                 x = torch.relu(x)
@@ -451,13 +456,21 @@ class QuantizedCNNModel:
                 if x.dim() > 2:
                     x = x.view(x.size(0), -1)
                 
-                W_q = self.quantized_weights_biases[layer_idx]['weight']
+                W_q = self.quantized_weights_biases[layer_idx]['weight'].to(self.device)
                 b_q = self.quantized_weights_biases[layer_idx]['bias']
-                
-                x = torch.matmul(x, W_q.float().t() / self.scaling_factor)
                 if b_q is not None:
-                    x = x + b_q.float() / self.scaling_factor
+                    b_q = b_q.to(self.device)
                 
+                # Properly rescale for quantized weights
+                # y = x @ W_q^T + b_q, where W_q = W * S, b_q = b * S
+                # Output needs to be divided by S^2
+                b_q_rescaled = b_q.float() / (self.scaling_factor ** 2) if b_q is not None else None
+                
+                x = torch.nn.functional.linear(
+                    x,
+                    W_q.float() / (self.scaling_factor ** 2),
+                    bias=b_q_rescaled
+                )
                 layer_idx += 1
         
         return x
