@@ -588,7 +588,7 @@ def main():
                 
                 # Create and compile model
                 cnn = CNNModel(num_classes=num_classes, input_channels=input_channels, device=device)
-                cnn.compile_model(learning_rate=0.001)
+                cnn.compile_model(lr=0.001)
                 
                 # Count parameters
                 total_params = sum(p.numel() for p in cnn.parameters())
