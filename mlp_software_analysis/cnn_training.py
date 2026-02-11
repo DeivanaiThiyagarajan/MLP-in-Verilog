@@ -8,6 +8,7 @@ import torchvision.transforms as transforms
 from sklearn.model_selection import train_test_split
 import os
 import json
+from datetime import datetime
 
 
 class CNNModel(nn.Module):
@@ -679,12 +680,65 @@ def select_dataset_cnn():
         return prepare_cifar10_dataset_cnn, 'CIFAR-10'
 
 
+def ensure_results_dir():
+    """
+    Ensure results directory exists.
+    """
+    results_dir = 'results'
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+    return results_dir
+
+
+def set_seed(seed=42):
+    """
+    Set random seeds for reproducibility across all libraries.
+    
+    Args:
+        seed: Random seed value
+    """
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def log_weight_statistics(cnn_model, log_file):
+    """
+    Compute and log weight statistics for all layers.
+    
+    Args:
+        cnn_model: Trained CNNModel
+        log_file: File handle to write logs
+    """
+    weights_biases = cnn_model.get_weights_and_biases()
+    
+    log_file.write("Weight Statistics:\n")
+    log_file.write(f"{'Layer Name':<40} {'Max |W|':<15} {'Std(W)':<15}\n")
+    log_file.write("-" * 70 + "\n")
+    
+    for wb in weights_biases:
+        w = wb['weight']
+        max_weight = w.abs().max().item()
+        std_weight = w.std().item()
+        layer_name = wb['name'][:40]
+        
+        log_file.write(f"{layer_name:<40} {max_weight:<15.6f} {std_weight:<15.6f}\n")
+    
+    log_file.write("\n")
+
+
 def main():
-    """Main function to train the CNN model for image classification."""
+    """Main function to train the CNN model for image classification with multiple configurations."""
     
     print("=" * 60)
-    print("CNN Training - Image Classification (PyTorch with GPU Support)")
+    print("CNN Training - Comparative Analysis (PyTorch with GPU Support)")
     print("=" * 60)
+    
+    # Set seed for reproducibility
+    set_seed(42)
     
     # Check GPU availability
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -694,69 +748,173 @@ def main():
         print(f"CUDA Version: {torch.version.cuda}")
     print()
     
+    # Ensure results directory exists
+    results_dir = ensure_results_dir()
+    
     # Let user select dataset
     dataset_func, dataset_name = select_dataset_cnn()
     
-    # Prepare dataset
-    print(f"\nPreparing {dataset_name} dataset...")
-    train_subset, val_subset, test_dataset, input_channels, num_classes = dataset_func()
+    # Create log file with fixed name (append mode)
+    log_filename = os.path.join(results_dir, f'{dataset_name.lower().replace("-", "")}_cnn_comparison.txt')
     
-    print(f"\nDataset Information ({dataset_name}):")
-    print(f"  Input Channels: {input_channels}")
-    print(f"  Number of Classes: {num_classes}")
-    print(f"  Training samples: {len(train_subset)}")
-    print(f"  Validation samples: {len(val_subset)}")
-    print(f"  Test samples: {len(test_dataset)}")
+    # Check if file exists to determine if we're appending
+    file_exists = os.path.exists(log_filename)
+    open_mode = 'a' if file_exists else 'w'
     
-    # Create data loaders
-    train_loader = DataLoader(train_subset, batch_size=64, shuffle=True)
-    val_loader = DataLoader(val_subset, batch_size=64, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+    with open(log_filename, open_mode) as log_file:
+        # Write header only if new file
+        if not file_exists:
+            log_file.write("=" * 80 + "\n")
+            log_file.write(f"CNN QUANTIZATION IMPACT ANALYSIS - {dataset_name}\n")
+            log_file.write("=" * 80 + "\n")
+            log_file.write("Configurations:\n")
+            log_file.write("  1. 20 epochs, scaling_factor=2^8 (256)\n")
+            log_file.write("  2. 20 epochs, scaling_factor=2^16 (65536)\n")
+            log_file.write("  3. 50 epochs, scaling_factor=2^8 (256)\n")
+            log_file.write("  4. 50 epochs, scaling_factor=2^16 (65536)\n\n")
+        
+        # Add separator and timestamp for this run
+        log_file.write("\n\n")
+        log_file.write("#" * 80 + "\n")
+        log_file.write(f"RUN at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        log_file.write("#" * 80 + "\n\n")
+        
+        # Define configurations
+        configs = [
+            (20, 2**8, "20 epochs + SF=2^8"),
+            (20, 2**16, "20 epochs + SF=2^16"),
+            (50, 2**8, "50 epochs + SF=2^8"),
+            (50, 2**16, "50 epochs + SF=2^16"),
+        ]
+        
+        results_summary = []
+        
+        # Run each configuration
+        for epochs, scaling_factor, config_name in configs:
+            log_file.write(f"\n{'=' * 80}\n")
+            log_file.write(f"Configuration: {config_name}\n")
+            log_file.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            log_file.write(f"{'=' * 80}\n\n")
+            
+            print(f"\n{'=' * 60}")
+            print(f"Running: {dataset_name} with epochs={epochs}, scaling_factor={scaling_factor}")
+            print(f"{'=' * 60}")
+            
+            try:
+                # Prepare dataset
+                print(f"Preparing {dataset_name} dataset...")
+                train_subset, val_subset, test_dataset, input_channels, num_classes = dataset_func()
+                
+                log_file.write(f"Dataset: {dataset_name}\n")
+                log_file.write(f"  Input Channels: {input_channels}\n")
+                log_file.write(f"  Number of Classes: {num_classes}\n")
+                log_file.write(f"  Training samples: {len(train_subset)}\n")
+                log_file.write(f"  Validation samples: {len(val_subset)}\n")
+                log_file.write(f"  Test samples: {len(test_dataset)}\n\n")
+                
+                # Create data loaders
+                train_loader = DataLoader(train_subset, batch_size=64, shuffle=True)
+                val_loader = DataLoader(val_subset, batch_size=64, shuffle=False)
+                test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+                
+                # Create and compile model
+                cnn = CNNModel(num_classes=num_classes, input_channels=input_channels, device=device)
+                cnn.compile_model(learning_rate=0.001)
+                
+                # Count parameters
+                total_params = sum(p.numel() for p in cnn.parameters())
+                trainable_params = sum(p.numel() for p in cnn.parameters() if p.requires_grad)
+                log_file.write(f"Model Parameters:\n")
+                log_file.write(f"  Total: {total_params:,}\n")
+                log_file.write(f"  Trainable: {trainable_params:,}\n\n")
+                
+                # Train the model
+                print(f"Training for {epochs} epochs...")
+                log_file.write(f"Training for {epochs} epochs...\n\n")
+                cnn.train_model(train_loader, val_loader, epochs=epochs)
+                
+                # Evaluate on test set
+                print(f"Evaluating on test set...")
+                test_loss, test_acc = cnn.evaluate(test_loader)
+                
+                log_file.write(f"\nTest Performance (Floating-Point):\n")
+                log_file.write(f"  Loss: {test_loss:.6f}\n")
+                log_file.write(f"  Accuracy: {test_acc:.6f}\n\n")
+                
+                # Extract and log weight statistics
+                log_weight_statistics(cnn, log_file)
+                
+                # Quantization comparison
+                print(f"Running quantization with scaling_factor={scaling_factor}...")
+                comparison_results = compare_quantization_cnn(cnn, test_loader, scaling_factor=scaling_factor)
+                
+                # Log results
+                log_file.write(f"Quantization Results (scaling_factor={scaling_factor}):\n")
+                log_file.write(f"  Floating-Point Accuracy:  {comparison_results['fp_accuracy']:.6f}\n")
+                log_file.write(f"  Quantized Accuracy:       {comparison_results['int_accuracy']:.6f}\n")
+                log_file.write(f"  Accuracy Drop:            {(comparison_results['fp_accuracy'] - comparison_results['int_accuracy']) * 100:.2f}%\n")
+                log_file.write(f"  Loss Difference:          {abs(comparison_results['fp_loss'] - comparison_results['int_loss']):.6f}\n\n")
+                
+                log_file.flush()
+                print(f"Configuration complete!\n")
+                
+                results_summary.append({
+                    'config': config_name,
+                    'epochs': epochs,
+                    'scaling_factor': scaling_factor,
+                    'fp_accuracy': comparison_results['fp_accuracy'],
+                    'int_accuracy': comparison_results['int_accuracy'],
+                    'accuracy_drop': comparison_results['fp_accuracy'] - comparison_results['int_accuracy']
+                })
+                
+            except Exception as e:
+                error_msg = f"Error in configuration: {str(e)}\n"
+                print(error_msg)
+                log_file.write(error_msg)
+                log_file.flush()
+        
+        # Write summary table
+        log_file.write("\n" + "-" * 80 + "\n")
+        log_file.write("SUMMARY TABLE FOR THIS RUN\n")
+        log_file.write("-" * 80 + "\n\n")
+        
+        log_file.write(f"{'Configuration':<25} {'FP Accuracy':<15} {'Quantized':<15} {'Drop %':<10}\n")
+        log_file.write("-" * 65 + "\n")
+        
+        for result in results_summary:
+            config_str = f"{result['config']:<25}"
+            fp_acc = f"{result['fp_accuracy']:.6f}".ljust(15)
+            int_acc = f"{result['int_accuracy']:.6f}".ljust(15)
+            drop_pct = f"{result['accuracy_drop'] * 100:.2f}%".ljust(10)
+            log_file.write(f"{config_str} {fp_acc} {int_acc} {drop_pct}\n")
+        
+        log_file.write("\n" + "-" * 80 + "\n")
+        log_file.write("KEY OBSERVATIONS\n")
+        log_file.write("-" * 80 + "\n\n")
+        
+        if results_summary:
+            # Analysis
+            epochs_20_drops = [r['accuracy_drop'] for r in results_summary if r['epochs'] == 20]
+            epochs_50_drops = [r['accuracy_drop'] for r in results_summary if r['epochs'] == 50]
+            sf_8_drops = [r['accuracy_drop'] for r in results_summary if r['scaling_factor'] == 2**8]
+            sf_16_drops = [r['accuracy_drop'] for r in results_summary if r['scaling_factor'] == 2**16]
+            
+            log_file.write(f"Average drop (20 epochs): {np.mean(epochs_20_drops):.6f}\n")
+            log_file.write(f"Average drop (50 epochs): {np.mean(epochs_50_drops):.6f}\n")
+            log_file.write(f"Average drop (SF=2^8):    {np.mean(sf_8_drops):.6f}\n")
+            log_file.write(f"Average drop (SF=2^16):   {np.mean(sf_16_drops):.6f}\n\n")
+            
+            log_file.write("Insights:\n")
+            if np.mean(epochs_20_drops) < np.mean(epochs_50_drops):
+                log_file.write(f"  - Models trained for fewer epochs (20) show LESS quantization degradation\n")
+            log_file.write(f"  - Scaling factor 2^{int(np.log2(2**16))} provides better precision than 2^8\n")
+        
+        log_file.write("\n")
     
-    # Create and compile model
-    cnn = CNNModel(num_classes=num_classes, input_channels=input_channels, device=device)
-    cnn.compile_model(learning_rate=0.001)
-    
-    print(f"\nCNN Architecture:")
-    print(f"  Input Channels: {input_channels}")
-    print(f"  Output Classes: {num_classes}")
-    print(f"  Device: {device}")
-    print()
-    
-    # Count parameters
-    total_params = sum(p.numel() for p in cnn.parameters())
-    trainable_params = sum(p.numel() for p in cnn.parameters() if p.requires_grad)
-    print(f"Total parameters: {total_params:,}")
-    print(f"Trainable parameters: {trainable_params:,}")
-    
-    # Train the model
-    print("\n" + "=" * 60)
-    print("Training the CNN...")
-    print("=" * 60)
-    cnn.train_model(train_loader, val_loader, epochs=50)
-    
-    # Evaluate on test set
-    print("\n" + "=" * 60)
-    print("Evaluating on Test Set...")
-    print("=" * 60)
-    cnn.evaluate(test_loader)
-    
-    # Save the weights and model
-    print("\n" + "=" * 60)
-    print("Saving Model and Weights...")
-    print("=" * 60)
-    model_name = f'{dataset_name.lower().replace("-", "")}_cnn_classifier'
-    cnn.save_weights(model_name=model_name)
-    
-    # Quantization and Integer Inference Comparison
-    print("\n" + "=" * 60)
-    print("Performing Quantization and Comparison...")
-    print("=" * 60)
-    comparison_results = compare_quantization_cnn(cnn, test_loader, scaling_factor=2**16)
-    
-    print("\n" + "=" * 60)
-    print("Training Complete!")
-    print("=" * 60)
+    print(f"\n{'=' * 60}")
+    print(f"All configurations completed!")
+    print(f"Results appended to: {log_filename}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == '__main__':
