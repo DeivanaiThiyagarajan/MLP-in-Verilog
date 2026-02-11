@@ -9,6 +9,7 @@ from sklearn.datasets import load_digits
 from sklearn.model_selection import train_test_split
 import os
 import json
+from datetime import datetime
 
 class MLPModel(nn.Module):
     """
@@ -162,7 +163,7 @@ class MLPModel(nn.Module):
         
         return avg_loss, accuracy
     
-    def train_model(self, X_train, y_train, X_val, y_val, epochs=50, batch_size=32):
+    def train_model(self, X_train, y_train, X_val, y_val, epochs=20, batch_size=32):
         """
         Train the MLP model.
         
@@ -775,12 +776,140 @@ def select_dataset():
         return prepare_digit_dataset, 'Digits'
 
 
+def ensure_results_dir():
+    """
+    Ensure results directory exists.
+    """
+    results_dir = 'results'
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+    return results_dir
+
+
+def set_seed(seed=42):
+    """
+    Set random seeds for reproducibility across all libraries.
+    
+    Args:
+        seed: Random seed value
+    """
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def log_weight_statistics(weights_biases, log_file):
+    """
+    Compute and log weight statistics for all layers.
+    
+    Args:
+        weights_biases: List of dicts with 'weight' and 'bias' tensors
+        log_file: File handle to write logs
+    """
+    log_file.write("Weight Statistics:\n")
+    log_file.write(f"{'Layer':<10} {'Max |W|':<15} {'Std(W)':<15}\n")
+    log_file.write("-" * 40 + "\n")
+    
+    for i, wb in enumerate(weights_biases):
+        w = wb['weight']
+        max_weight = w.abs().max().item()
+        std_weight = w.std().item()
+        
+        log_file.write(f"Layer {i:<3} {max_weight:<15.6f} {std_weight:<15.6f}\n")
+    
+    log_file.write("\n")
+
+
+def run_training_config(dataset_func, dataset_name, device, epochs, scaling_factor, log_file, config_name):
+    """
+    Run a single training configuration and log results.
+    
+    Args:
+        dataset_func: Function to prepare dataset
+        dataset_name: Name of dataset
+        device: Device to use (cpu or cuda)
+        epochs: Number of training epochs
+        scaling_factor: Scaling factor for quantization (power of 2)
+        log_file: File handle to write logs
+        config_name: Name of the configuration
+    """
+    log_file.write(f"\n{'=' * 80}\n")
+    log_file.write(f"Configuration: {config_name}\n")
+    log_file.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    log_file.write(f"{'=' * 80}\n\n")
+    
+    print(f"\n{'=' * 60}")
+    print(f"Running: {dataset_name} with epochs={epochs}, scaling_factor={scaling_factor}")
+    print(f"{'=' * 60}")
+    
+    try:
+        # Prepare dataset
+        X_train, X_val, X_test, y_train, y_val, y_test, input_size, num_classes = dataset_func()
+        
+        log_file.write(f"Dataset: {dataset_name}\n")
+        log_file.write(f"  Training samples: {X_train.shape[0]}\n")
+        log_file.write(f"  Validation samples: {X_val.shape[0]}\n")
+        log_file.write(f"  Test samples: {X_test.shape[0]}\n")
+        log_file.write(f"  Input Features: {input_size}\n")
+        log_file.write(f"  Number of Classes: {num_classes}\n\n")
+        
+        # Create and train model
+        mlp = MLPModel(input_size=input_size, num_classes=num_classes, device=device)
+        mlp.compile_model()
+        
+        print(f"Training for {epochs} epochs...")
+        log_file.write(f"Training for {epochs} epochs...\n")
+        
+        mlp.train_model(X_train, y_train, X_val, y_val, epochs=epochs, batch_size=32)
+        
+        # Evaluate on test set
+        print(f"Evaluating on test set...")
+        test_loss, test_acc = mlp.evaluate(X_test, y_test)
+        
+        log_file.write(f"\nTest Performance (Floating-Point):\n")
+        log_file.write(f"  Loss: {test_loss:.6f}\n")
+        log_file.write(f"  Accuracy: {test_acc:.6f}\n\n")
+        
+        # Extract and log weight statistics
+        weights_biases = mlp.get_weights_and_biases()
+        log_weight_statistics(weights_biases, log_file)
+        
+        # Quantization comparison
+        print(f"Running quantization with scaling_factor={scaling_factor}...")
+        comparison_results = compare_quantization(mlp, X_test, y_test, scaling_factor=scaling_factor, batch_size=32)
+        
+        # Log results
+        log_file.write(f"Quantization Results (scaling_factor={scaling_factor}):\n")
+        log_file.write(f"  Floating-Point Accuracy:  {comparison_results['fp_accuracy']:.6f}\n")
+        log_file.write(f"  Quantized Accuracy:       {comparison_results['int_accuracy']:.6f}\n")
+        log_file.write(f"  Accuracy Drop:            {(comparison_results['fp_accuracy'] - comparison_results['int_accuracy']) * 100:.2f}%\n")
+        log_file.write(f"  Loss Difference:          {abs(comparison_results['fp_loss'] - comparison_results['int_loss']):.6f}\n\n")
+        
+        log_file.flush()
+        print(f"Configuration complete!\n")
+        
+        return comparison_results
+        
+    except Exception as e:
+        error_msg = f"Error in configuration: {str(e)}\n"
+        print(error_msg)
+        log_file.write(error_msg)
+        log_file.flush()
+        return None
+
+
 def main():
-    """Main function to train the MLP model for image classification."""
+    """Main function to train the MLP model with multiple configurations."""
     
     print("=" * 60)
-    print("MLP Training - Image Classification (PyTorch with GPU Support)")
+    print("MLP Training - Comparative Analysis (PyTorch with GPU Support)")
     print("=" * 60)
+    
+    # Set seed for reproducibility
+    set_seed(42)
     
     # Check GPU availability
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -790,61 +919,111 @@ def main():
         print(f"CUDA Version: {torch.version.cuda}")
     print()
     
+    # Ensure results directory exists
+    results_dir = ensure_results_dir()
+    
     # Let user select dataset
     dataset_func, dataset_name = select_dataset()
     
-    # Prepare image dataset
-    print(f"\nPreparing {dataset_name} dataset...")
-    X_train, X_val, X_test, y_train, y_val, y_test, input_size, num_classes = dataset_func()
+    # Create log file with fixed name (append mode)
+    log_filename = os.path.join(results_dir, f'{dataset_name.lower().replace("-", "")}_mlp_comparison.txt')
     
-    print(f"\nDataset Information ({dataset_name}):")
-    print(f"  Input Features (dynamic): {input_size}")
-    print(f"  Number of Classes (dynamic): {num_classes}")
-    print(f"  Training samples: {X_train.shape[0]}")
-    print(f"  Validation samples: {X_val.shape[0]}")
-    print(f"  Test samples: {X_test.shape[0]}")
+    # Check if file exists to determine if we're appending
+    file_exists = os.path.exists(log_filename)
+    open_mode = 'a' if file_exists else 'w'
     
-    # Create and build model
-    mlp = MLPModel(input_size=input_size, num_classes=num_classes, device=device)
-    mlp.compile_model()
+    with open(log_filename, open_mode) as log_file:
+        # Write header only if new file
+        if not file_exists:
+            log_file.write("=" * 80 + "\n")
+            log_file.write(f"MLP QUANTIZATION IMPACT ANALYSIS - {dataset_name}\n")
+            log_file.write("=" * 80 + "\n")
+            log_file.write("Configurations:\n")
+            log_file.write("  1. 20 epochs, scaling_factor=2^8 (256)\n")
+            log_file.write("  2. 20 epochs, scaling_factor=2^16 (65536)\n")
+            log_file.write("  3. 50 epochs, scaling_factor=2^8 (256)\n")
+            log_file.write("  4. 50 epochs, scaling_factor=2^16 (65536)\n\n")
+        
+        # Add separator and timestamp for this run
+        log_file.write("\n\n")
+        log_file.write("#" * 80 + "\n")
+        log_file.write(f"RUN at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        log_file.write("#" * 80 + "\n\n")
+        
+        # Define configurations
+        configs = [
+            (20, 2**8, "20 epochs + SF=2^8"),
+            (20, 2**16, "20 epochs + SF=2^16"),
+            (50, 2**8, "50 epochs + SF=2^8"),
+            (50, 2**16, "50 epochs + SF=2^16"),
+        ]
+        
+        results_summary = []
+        
+        # Run each configuration
+        for epochs, scaling_factor, config_name in configs:
+            results = run_training_config(
+                dataset_func, 
+                dataset_name, 
+                device, 
+                epochs, 
+                scaling_factor, 
+                log_file,
+                config_name
+            )
+            
+            if results:
+                results_summary.append({
+                    'config': config_name,
+                    'epochs': epochs,
+                    'scaling_factor': scaling_factor,
+                    'fp_accuracy': results['fp_accuracy'],
+                    'int_accuracy': results['int_accuracy'],
+                    'accuracy_drop': results['fp_accuracy'] - results['int_accuracy']
+                })
+        
+        # Write summary table
+        log_file.write("\n" + "-" * 80 + "\n")
+        log_file.write("SUMMARY TABLE FOR THIS RUN\n")
+        log_file.write("-" * 80 + "\n\n")
+        
+        log_file.write(f"{'Configuration':<25} {'FP Accuracy':<15} {'Quantized':<15} {'Drop %':<10}\n")
+        log_file.write("-" * 65 + "\n")
+        
+        for result in results_summary:
+            config_str = f"{result['config']:<25}"
+            fp_acc = f"{result['fp_accuracy']:.6f}".ljust(15)
+            int_acc = f"{result['int_accuracy']:.6f}".ljust(15)
+            drop_pct = f"{result['accuracy_drop'] * 100:.2f}%".ljust(10)
+            log_file.write(f"{config_str} {fp_acc} {int_acc} {drop_pct}\n")
+        
+        log_file.write("\n" + "-" * 80 + "\n")
+        log_file.write("KEY OBSERVATIONS\n")
+        log_file.write("-" * 80 + "\n\n")
+        
+        if results_summary:
+            # Analysis
+            epochs_20_drops = [r['accuracy_drop'] for r in results_summary if r['epochs'] == 20]
+            epochs_50_drops = [r['accuracy_drop'] for r in results_summary if r['epochs'] == 50]
+            sf_8_drops = [r['accuracy_drop'] for r in results_summary if r['scaling_factor'] == 2**8]
+            sf_16_drops = [r['accuracy_drop'] for r in results_summary if r['scaling_factor'] == 2**16]
+            
+            log_file.write(f"Average drop (20 epochs): {np.mean(epochs_20_drops):.6f}\n")
+            log_file.write(f"Average drop (50 epochs): {np.mean(epochs_50_drops):.6f}\n")
+            log_file.write(f"Average drop (SF=2^8):    {np.mean(sf_8_drops):.6f}\n")
+            log_file.write(f"Average drop (SF=2^16):   {np.mean(sf_16_drops):.6f}\n\n")
+            
+            log_file.write("Insights:\n")
+            if np.mean(epochs_20_drops) < np.mean(epochs_50_drops):
+                log_file.write(f"  - Models trained for fewer epochs (20) show LESS quantization degradation\n")
+            log_file.write(f"  - Scaling factor 2^{int(np.log2(2**16))} provides better precision than 2^8\n")
+        
+        log_file.write("\n")
     
-    print(f"\nModel Architecture:")
-    print(f"  Input Layer: {input_size} neurons")
-    print(f"  Hidden Layers: {mlp.hidden_layers}")
-    print(f"  Output Layer: {num_classes} neurons")
-    print(f"  Device: {device}")
-    print()
-    
-    mlp.summary()
-    
-    # Train the model
-    print("\n" + "=" * 60)
-    print("Training the MLP...")
-    print("=" * 60)
-    mlp.train_model(X_train, y_train, X_val, y_val, epochs=50, batch_size=32)
-    
-    # Evaluate on test set
-    print("\n" + "=" * 60)
-    print("Evaluating on Test Set...")
-    print("=" * 60)
-    mlp.evaluate(X_test, y_test)
-    
-    # Save the weights and model
-    print("\n" + "=" * 60)
-    print("Saving Model and Weights...")
-    print("=" * 60)
-    model_name = f'{dataset_name.lower().replace("-", "")}_classifier'
-    mlp.save_weights(model_name=model_name)
-    
-    # Quantization and Integer Inference Comparison
-    print("\n" + "=" * 60)
-    print("Performing Quantization and Comparison...")
-    print("=" * 60)
-    comparison_results = compare_quantization(mlp, X_test, y_test, scaling_factor=2**16, batch_size=32)
-    
-    print("\n" + "=" * 60)
-    print("Training Complete!")
-    print("=" * 60)
+    print(f"\n{'=' * 60}")
+    print(f"All configurations completed!")
+    print(f"Results appended to: {log_filename}")
+    print(f"{'=' * 60}")
 
 
 if __name__ == '__main__':
