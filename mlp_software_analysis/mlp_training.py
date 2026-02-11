@@ -162,7 +162,7 @@ class MLPModel(nn.Module):
         
         return avg_loss, accuracy
     
-    def train_model(self, X_train, y_train, X_val, y_val, epochs=20, batch_size=32):
+    def train_model(self, X_train, y_train, X_val, y_val, epochs=50, batch_size=32):
         """
         Train the MLP model.
         
@@ -821,7 +821,7 @@ def main():
     print("\n" + "=" * 60)
     print("Training the MLP...")
     print("=" * 60)
-    mlp.train_model(X_train, y_train, X_val, y_val, epochs=20, batch_size=32)
+    mlp.train_model(X_train, y_train, X_val, y_val, epochs=50, batch_size=32)
     
     # Evaluate on test set
     print("\n" + "=" * 60)
