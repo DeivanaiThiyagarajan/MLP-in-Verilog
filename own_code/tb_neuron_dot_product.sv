@@ -63,6 +63,10 @@ module tb_neuron_dot_product();
     
     // Main testbench
     initial begin
+
+        $dumpfile("one_neuron.vcd");
+        $dumpvars(0, tb_neuron_dot_product);
+
         $display("========================================");
         $display("  Neuron Sequential MAC Testbench");
         $display("  Integer Format");

@@ -1,6 +1,9 @@
 // Neuron: Sequential MAC (Multiply-Accumulate)
 // Integer implementation - Output: sum(a_in[i]*w_in[i]) + bias
 
+`timescale 1ns/1ps
+
+
 module neuron_dot_product #(
     parameter INPUT_WIDTH = 3,           // Number of inputs
     parameter DATA_WIDTH = 16,           // Word width

@@ -1,13 +1,13 @@
 
 
 ################################################################################
-RUN at 2026-02-11 13:14:57
+RUN at 2026-02-11 13:27:13
 ################################################################################
 
 
 ================================================================================
 Configuration: 20 epochs + SF=2^8
-Timestamp: 2026-02-11 13:14:57
+Timestamp: 2026-02-11 13:27:13
 ================================================================================
 
 Dataset: MNIST
@@ -18,3 +18,150 @@ Dataset: MNIST
   Number of Classes: 10
 
 Training for 20 epochs...
+
+Test Performance (Floating-Point):
+  Loss: 0.070877
+  Accuracy: 0.980200
+
+Weight Statistics:
+Layer      Max |W|         Std(W)         
+----------------------------------------
+Layer 0   1.287138        0.136333       
+Layer 1   0.892014        0.171486       
+Layer 2   0.691014        0.185714       
+Layer 3   0.391637        0.139595       
+Layer 4   0.692898        0.405242       
+
+Quantization Results (scaling_factor=256):
+  Floating-Point Accuracy:  0.980200
+  Quantized Accuracy:       0.948200
+  Accuracy Drop:            3.20%
+  Loss Difference:          0.320396
+
+
+================================================================================
+Configuration: 20 epochs + SF=2^16
+Timestamp: 2026-02-11 13:29:13
+================================================================================
+
+Dataset: MNIST
+  Training samples: 48000
+  Validation samples: 12000
+  Test samples: 10000
+  Input Features: 784
+  Number of Classes: 10
+
+Training for 20 epochs...
+
+Test Performance (Floating-Point):
+  Loss: 0.073048
+  Accuracy: 0.978900
+
+Weight Statistics:
+Layer      Max |W|         Std(W)         
+----------------------------------------
+Layer 0   1.152646        0.139653       
+Layer 1   1.079985        0.174254       
+Layer 2   0.664756        0.187669       
+Layer 3   0.438851        0.138793       
+Layer 4   0.637766        0.406663       
+
+Quantization Results (scaling_factor=65536):
+  Floating-Point Accuracy:  0.978900
+  Quantized Accuracy:       0.917400
+  Accuracy Drop:            6.15%
+  Loss Difference:          0.350016
+
+
+================================================================================
+Configuration: 50 epochs + SF=2^8
+Timestamp: 2026-02-11 13:31:14
+================================================================================
+
+Dataset: MNIST
+  Training samples: 48000
+  Validation samples: 12000
+  Test samples: 10000
+  Input Features: 784
+  Number of Classes: 10
+
+Training for 50 epochs...
+
+Test Performance (Floating-Point):
+  Loss: 0.070306
+  Accuracy: 0.980900
+
+Weight Statistics:
+Layer      Max |W|         Std(W)         
+----------------------------------------
+Layer 0   2.224958        0.204610       
+Layer 1   1.472418        0.259505       
+Layer 2   0.993016        0.270317       
+Layer 3   0.828088        0.226211       
+Layer 4   0.725464        0.444392       
+
+Quantization Results (scaling_factor=256):
+  Floating-Point Accuracy:  0.980900
+  Quantized Accuracy:       0.898200
+  Accuracy Drop:            8.27%
+  Loss Difference:          0.578004
+
+
+================================================================================
+Configuration: 50 epochs + SF=2^16
+Timestamp: 2026-02-11 13:35:26
+================================================================================
+
+Dataset: MNIST
+  Training samples: 48000
+  Validation samples: 12000
+  Test samples: 10000
+  Input Features: 784
+  Number of Classes: 10
+
+Training for 50 epochs...
+
+Test Performance (Floating-Point):
+  Loss: 0.070141
+  Accuracy: 0.980700
+
+Weight Statistics:
+Layer      Max |W|         Std(W)         
+----------------------------------------
+Layer 0   1.733545        0.192430       
+Layer 1   1.300375        0.243986       
+Layer 2   0.927292        0.252283       
+Layer 3   0.555036        0.202177       
+Layer 4   0.662856        0.435177       
+
+Quantization Results (scaling_factor=65536):
+  Floating-Point Accuracy:  0.980700
+  Quantized Accuracy:       0.939500
+  Accuracy Drop:            4.12%
+  Loss Difference:          0.173258
+
+
+--------------------------------------------------------------------------------
+SUMMARY TABLE FOR THIS RUN
+--------------------------------------------------------------------------------
+
+Configuration             FP Accuracy     Quantized       Drop %    
+-----------------------------------------------------------------
+20 epochs + SF=2^8        0.980200        0.948200        3.20%     
+20 epochs + SF=2^16       0.978900        0.917400        6.15%     
+50 epochs + SF=2^8        0.980900        0.898200        8.27%     
+50 epochs + SF=2^16       0.980700        0.939500        4.12%     
+
+--------------------------------------------------------------------------------
+KEY OBSERVATIONS
+--------------------------------------------------------------------------------
+
+Average drop (20 epochs): 0.046750
+Average drop (50 epochs): 0.061950
+Average drop (SF=2^8):    0.057350
+Average drop (SF=2^16):   0.051350
+
+Insights:
+  - Models trained for fewer epochs (20) show LESS quantization degradation
+  - Scaling factor 2^16 provides better precision than 2^8
+
